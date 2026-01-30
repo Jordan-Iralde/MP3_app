@@ -38,6 +38,8 @@ Thumbs.db
 # Expo
 .expo/
 .expo-shared/
+android/
+ios/
 dist/
 npm-debug.*
 *.jks
