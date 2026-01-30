@@ -1,7 +1,7 @@
 npm install express cors dotenv mongoose
 npm install -D nodemon typescript ts-node @types/node @types/express
+npm install -D @types/express
 
 npx tsc --init
 
 mkdir src
-s
