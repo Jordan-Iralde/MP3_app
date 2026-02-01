@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
-import { FlatList, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import { FlatList, StyleSheet, ActivityIndicator, Pressable, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useStoragePermission } from '@/hooks/use-storage-permission';
-import { useAudioPlayer } from '@/hooks/use-audio-player';
+import { usePlayer } from '@/context/PlayerContext';
 import { fetchAudioTracks } from '@/services/mediaLibrary.service';
 import { formatDuration } from '@/utils/formatDuration';
 import { Player } from '@/components/player';
+import { MiniPlayer } from '@/components/mini-player';
+import { MostPlayedSection } from '@/components/most-played';
 import { Track } from '@/types/Track';
 
 export default function HomeScreen() {
   const { isGranted, isLoading: isPermissionLoading, error: permissionError } = useStoragePermission();
-  const { state: playerState, loadTrack } = useAudioPlayer();
+  const { playTrack, playerState } = usePlayer();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
   const [tracksError, setTracksError] = useState<Error | null>(null);
@@ -40,30 +42,33 @@ export default function HomeScreen() {
 
   const handleTrackPress = async (track: Track) => {
     try {
-      await loadTrack(track);
-      setIsPlayerOpen(true);
+      // Play track with the full queue
+      await playTrack(track, tracks);
     } catch (error) {
-      console.warn('Error loading track:', error);
+      console.warn('Error playing track:', error);
     }
   };
 
-  const renderTrack = ({ item }: { item: Track }) => (
-    <Pressable onPress={() => handleTrackPress(item)}>
-      <ThemedView style={styles.trackItem}>
-        <ThemedView style={styles.trackInfo}>
-          <ThemedText style={styles.trackTitle} numberOfLines={1}>
-            {item.title}
-          </ThemedText>
-          <ThemedText style={styles.trackArtist} numberOfLines={1}>
-            {item.artist}
+  const renderTrack = ({ item }: { item: Track }) => {
+    const isCurrentTrack = playerState.currentTrack?.id === item.id;
+    return (
+      <Pressable onPress={() => handleTrackPress(item)}>
+        <ThemedView style={[styles.trackItem, isCurrentTrack && styles.trackItemActive]}>
+          <ThemedView style={styles.trackInfo}>
+            <ThemedText style={[styles.trackTitle, isCurrentTrack && styles.trackTitleActive]} numberOfLines={1}>
+              {item.title}
+            </ThemedText>
+            <ThemedText style={styles.trackArtist} numberOfLines={1}>
+              {item.artist}
+            </ThemedText>
+          </ThemedView>
+          <ThemedText style={styles.trackDuration}>
+            {formatDuration(item.duration)}
           </ThemedText>
         </ThemedView>
-        <ThemedText style={styles.trackDuration}>
-          {formatDuration(item.duration)}
-        </ThemedText>
-      </ThemedView>
-    </Pressable>
-  );
+      </Pressable>
+    );
+  };
 
   const renderEmptyState = () => (
     <ThemedView style={styles.emptyContainer}>
@@ -150,19 +155,34 @@ export default function HomeScreen() {
       )}
 
       {!isPermissionLoading && isGranted && !isLoadingTracks && !tracksError && (
-        <FlatList
-          data={tracks}
-          renderItem={renderTrack}
-          keyExtractor={(item) => item.id}
-          ListEmptyComponent={renderEmptyState}
-          contentContainerStyle={tracks.length === 0 ? styles.emptyList : undefined}
-          style={styles.list}
-        />
+        <>
+          <FlatList
+            data={tracks}
+            renderItem={renderTrack}
+            keyExtractor={(item) => item.id}
+            ListEmptyComponent={renderEmptyState}
+            ListHeaderComponent={
+              tracks.length > 0 ? (
+                <ThemedView style={styles.mostPlayedSection}>
+                  <MostPlayedSection onTrackPress={handleTrackPress} />
+                </ThemedView>
+              ) : null
+            }
+            contentContainerStyle={tracks.length === 0 ? styles.emptyList : undefined}
+            style={styles.list}
+            contentInset={{ bottom: playerState.currentTrack ? 60 : 0 }}
+          />
+          {playerState.currentTrack && (
+            <Pressable onPress={() => setIsPlayerOpen(true)} style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
+              <MiniPlayer onExpand={() => setIsPlayerOpen(true)} />
+            </Pressable>
+          )}
+        </>
       )}
 
       <ThemedView style={styles.footer}>
         <ThemedText style={styles.versionText}>
-          v0.3 — Basic playback
+          v0.4 — Advanced player
         </ThemedText>
       </ThemedView>
     </ThemedView>
@@ -200,6 +220,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
+  trackItemActive: {
+    backgroundColor: 'rgba(0, 122, 255, 0.05)',
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF',
+    paddingLeft: 16,
+  },
   trackInfo: {
     flex: 1,
     marginRight: 12,
@@ -208,6 +234,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     marginBottom: 4,
+  },
+  trackTitleActive: {
+    fontWeight: '700',
+    color: '#007AFF',
   },
   trackArtist: {
     fontSize: 14,
@@ -284,6 +314,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.5,
     textAlign: 'center',
+  },
+  mostPlayedSection: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
   footer: {
     alignItems: 'center',
