@@ -3,6 +3,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { usePlayer } from '@/context/PlayerContext';
 import { formatDuration } from '@/utils/formatDuration';
+import { SleepTimerButton } from '@/components/sleep-timer';
 
 interface MiniPlayerProps {
   onExpand: () => void;
@@ -73,6 +74,9 @@ export function MiniPlayer({ onExpand }: MiniPlayerProps) {
               {playerState.isPlaying ? '⏸' : '▶'}
             </ThemedText>
           </Pressable>
+
+          {/* Sleep timer button */}
+          <SleepTimerButton />
         </ThemedView>
       </ThemedView>
     </Pressable>

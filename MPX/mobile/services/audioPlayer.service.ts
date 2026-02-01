@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { Track } from '../types/Track';
+import { playbackNotificationManager } from './playback-notification-manager';
 
 // Import expo-audio on native platforms only
 let ExpoAudio: any = null;
@@ -227,6 +228,17 @@ export class AudioPlayerService {
       console.log('[AudioPlayer.play] Starting playback');
       this.player.play();
       this.startPositionCheck(); // Start checking for track end
+      
+      // Mostrar notificación de reproducción
+      if (this.state.currentTrack) {
+        await playbackNotificationManager.showPlaybackNotification(
+          this.state.currentTrack,
+          true,
+          this.state.position,
+          this.state.duration
+        );
+      }
+      
       // Actualizar estado local
       this.state = { ...this.state, isPlaying: true };
       this.notifyListeners();
@@ -249,6 +261,15 @@ export class AudioPlayerService {
       console.log('[AudioPlayer.pause] Pausing playback');
       this.player.pause();
       this.stopPositionCheck(); // Stop checking for track end
+      
+      // Actualizar notificación de reproducción
+      if (this.state.currentTrack) {
+        await playbackNotificationManager.updatePlaybackNotification(
+          false,
+          this.state.position
+        );
+      }
+      
       // Actualizar estado local
       this.state = { ...this.state, isPlaying: false };
       this.notifyListeners();
@@ -298,6 +319,10 @@ export class AudioPlayerService {
       }
       this.player = null;
     }
+    
+    // Cerrar notificación
+    await playbackNotificationManager.dismissNotification();
+    
     this.state = {
       currentTrack: null,
       isPlaying: false,

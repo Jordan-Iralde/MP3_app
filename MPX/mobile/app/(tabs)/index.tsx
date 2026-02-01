@@ -9,15 +9,37 @@ import { formatDuration } from '@/utils/formatDuration';
 import { Player } from '@/components/player';
 import { MiniPlayer } from '@/components/mini-player';
 import { MostPlayedSection } from '@/components/most-played';
+import { OptimizedTrackList } from '@/components/optimized-track-list';
+import { FavoritesFilter } from '@/components/favorites-filter';
+import { FavoriteButton } from '@/components/favorite-button';
+import { AddToPlaylistModal } from '@/components/add-to-playlist-modal';
+import { SearchBar } from '@/components/search-bar';
+import { useTrackFilter, useAddSearchHistory } from '@/hooks/use-track-filter';
 import { Track } from '@/types/Track';
+import { usePlayerStore } from '@/store/playerStore';
 
 export default function HomeScreen() {
   const { isGranted, isLoading: isPermissionLoading, error: permissionError } = useStoragePermission();
   const { playTrack, playerState } = usePlayer();
+  const { showFavoritesOnly } = usePlayerStore();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
   const [tracksError, setTracksError] = useState<Error | null>(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
+  const [addToPlaylistModalVisible, setAddToPlaylistModalVisible] = useState(false);
+  const [selectedTrackForPlaylist, setSelectedTrackForPlaylist] = useState<Track | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const addSearchHistory = useAddSearchHistory();
+  
+  // Use track filter hook
+  const {
+    filteredTracks,
+    searchHistory,
+    isSearching,
+    addToHistory,
+    removeFromHistory,
+    clearHistory,
+  } = useTrackFilter(tracks, searchTerm);
 
   useEffect(() => {
     if (!isGranted) {
@@ -42,8 +64,9 @@ export default function HomeScreen() {
 
   const handleTrackPress = async (track: Track) => {
     try {
-      // Play track with the full queue
-      await playTrack(track, tracks);
+      // Play track with the filtered queue if favorites are shown, otherwise full queue
+      const queue = showFavoritesOnly ? filteredTracks : tracks;
+      await playTrack(track, queue);
     } catch (error) {
       console.warn('Error playing track:', error);
     }
@@ -156,22 +179,67 @@ export default function HomeScreen() {
 
       {!isPermissionLoading && isGranted && !isLoadingTracks && !tracksError && (
         <>
-          <FlatList
-            data={tracks}
-            renderItem={renderTrack}
-            keyExtractor={(item) => item.id}
-            ListEmptyComponent={renderEmptyState}
-            ListHeaderComponent={
-              tracks.length > 0 ? (
-                <ThemedView style={styles.mostPlayedSection}>
-                  <MostPlayedSection onTrackPress={handleTrackPress} />
-                </ThemedView>
-              ) : null
-            }
-            contentContainerStyle={tracks.length === 0 ? styles.emptyList : undefined}
-            style={styles.list}
-            contentInset={{ bottom: playerState.currentTrack ? 60 : 0 }}
+          <SearchBar
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            onSearch={(term) => addToHistory(term)}
+            onClearSearch={() => setSearchTerm('')}
+            searchHistory={searchHistory}
+            onHistoryItemPress={(term) => setSearchTerm(term)}
+            onRemoveHistoryItem={removeFromHistory}
+            onClearHistory={clearHistory}
+            isSearching={isSearching}
+            placeholder="Buscar canciones..."
           />
+          
+          {!isSearching && (
+            <FavoritesFilter 
+              tracks={tracks}
+              onFilteredTracksChange={() => {}}
+            />
+          )}
+
+          {isSearching ? (
+            <OptimizedTrackList
+              tracks={filteredTracks}
+              currentTrackId={playerState.currentTrack?.id}
+              isLoading={false}
+              onTrackPress={handleTrackPress}
+              onAddToPlaylist={(track) => {
+                setSelectedTrackForPlaylist(track);
+                setAddToPlaylistModalVisible(true);
+              }}
+              ListEmptyComponent={
+                <ThemedView style={styles.emptySearchContainer}>
+                  <ThemedText style={styles.emptySearchText}>
+                    No se encontraron resultados para "{searchTerm}"
+                  </ThemedText>
+                </ThemedView>
+              }
+              contentInset={{ bottom: playerState.currentTrack ? 60 : 0 }}
+            />
+          ) : (
+            <OptimizedTrackList
+              tracks={filteredTracks.length > 0 ? filteredTracks : tracks}
+              currentTrackId={playerState.currentTrack?.id}
+              isLoading={isLoadingTracks}
+              onTrackPress={handleTrackPress}
+              onAddToPlaylist={(track) => {
+                setSelectedTrackForPlaylist(track);
+                setAddToPlaylistModalVisible(true);
+              }}
+              ListHeaderComponent={
+                (filteredTracks.length > 0 ? filteredTracks : tracks).length > 0 ? (
+                  <ThemedView style={styles.mostPlayedSection}>
+                    <MostPlayedSection onTrackPress={handleTrackPress} />
+                  </ThemedView>
+                ) : undefined
+              }
+              ListEmptyComponent={renderEmptyState()}
+              contentInset={{ bottom: playerState.currentTrack ? 60 : 0 }}
+            />
+          )}
+
           {playerState.currentTrack && (
             <Pressable onPress={() => setIsPlayerOpen(true)} style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
               <MiniPlayer onExpand={() => setIsPlayerOpen(true)} />
@@ -182,9 +250,18 @@ export default function HomeScreen() {
 
       <ThemedView style={styles.footer}>
         <ThemedText style={styles.versionText}>
-          v0.4 — Advanced player
+          v0.5 — Playlists & Favorites
         </ThemedText>
       </ThemedView>
+
+      <AddToPlaylistModal
+        visible={addToPlaylistModalVisible}
+        track={selectedTrackForPlaylist}
+        onClose={() => {
+          setAddToPlaylistModalVisible(false);
+          setSelectedTrackForPlaylist(null);
+        }}
+      />
     </ThemedView>
   );
 }
@@ -313,6 +390,17 @@ const styles = StyleSheet.create({
   emptyDescription: {
     fontSize: 14,
     opacity: 0.5,
+    textAlign: 'center',
+  },
+  emptySearchContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  emptySearchText: {
+    fontSize: 16,
+    opacity: 0.6,
     textAlign: 'center',
   },
   mostPlayedSection: {
