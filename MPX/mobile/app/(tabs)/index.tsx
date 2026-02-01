@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
-import { FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+import { FlatList, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useStoragePermission } from '@/hooks/use-storage-permission';
+import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { fetchAudioTracks } from '@/services/mediaLibrary.service';
 import { formatDuration } from '@/utils/formatDuration';
+import { Player } from '@/components/player';
 import { Track } from '@/types/Track';
 
 export default function HomeScreen() {
   const { isGranted, isLoading: isPermissionLoading, error: permissionError } = useStoragePermission();
+  const { state: playerState, loadTrack } = useAudioPlayer();
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
   const [tracksError, setTracksError] = useState<Error | null>(null);
+  const [isPlayerOpen, setIsPlayerOpen] = useState(false);
 
   useEffect(() => {
     if (!isGranted) {
@@ -34,20 +38,31 @@ export default function HomeScreen() {
     loadTracks();
   }, [isGranted]);
 
+  const handleTrackPress = async (track: Track) => {
+    try {
+      await loadTrack(track);
+      setIsPlayerOpen(true);
+    } catch (error) {
+      console.warn('Error loading track:', error);
+    }
+  };
+
   const renderTrack = ({ item }: { item: Track }) => (
-    <ThemedView style={styles.trackItem}>
-      <ThemedView style={styles.trackInfo}>
-        <ThemedText style={styles.trackTitle} numberOfLines={1}>
-          {item.title}
-        </ThemedText>
-        <ThemedText style={styles.trackArtist} numberOfLines={1}>
-          {item.artist}
+    <Pressable onPress={() => handleTrackPress(item)}>
+      <ThemedView style={styles.trackItem}>
+        <ThemedView style={styles.trackInfo}>
+          <ThemedText style={styles.trackTitle} numberOfLines={1}>
+            {item.title}
+          </ThemedText>
+          <ThemedText style={styles.trackArtist} numberOfLines={1}>
+            {item.artist}
+          </ThemedText>
+        </ThemedView>
+        <ThemedText style={styles.trackDuration}>
+          {formatDuration(item.duration)}
         </ThemedText>
       </ThemedView>
-      <ThemedText style={styles.trackDuration}>
-        {formatDuration(item.duration)}
-      </ThemedText>
-    </ThemedView>
+    </Pressable>
   );
 
   const renderEmptyState = () => (
@@ -60,6 +75,11 @@ export default function HomeScreen() {
       </ThemedText>
     </ThemedView>
   );
+
+  // Show player if open
+  if (isPlayerOpen) {
+    return <Player onClose={() => setIsPlayerOpen(false)} />;
+  }
 
   return (
     <ThemedView style={styles.container}>
@@ -142,7 +162,7 @@ export default function HomeScreen() {
 
       <ThemedView style={styles.footer}>
         <ThemedText style={styles.versionText}>
-          v0.2 — Local music discovery
+          v0.3 — Basic playback
         </ThemedText>
       </ThemedView>
     </ThemedView>
