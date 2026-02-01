@@ -1,21 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { Platform } from 'react-native';
 import { Track } from '@/types/Track';
-
-// Lazy-load AsyncStorage with fallback
-let AsyncStorage: any = null;
-const getAsyncStorage = async () => {
-  if (!AsyncStorage && Platform.OS !== 'web') {
-    try {
-      AsyncStorage = await import('@react-native-async-storage/async-storage').then(m => m.default);
-    } catch (error) {
-      console.warn('[PlayerStore] AsyncStorage not available, using memory storage');
-      return null;
-    }
-  }
-  return AsyncStorage;
-};
+import { getAsyncStorage } from '@/utils/asyncStorageHelper';
 
 export interface PlayStats {
   [trackUri: string]: {
@@ -41,6 +27,9 @@ interface PlayerStore {
   // Play statistics
   playStats: PlayStats;
 
+  // Filter
+  showFavoritesOnly: boolean;
+
   // Actions
   setCurrentTrack: (track: Track) => void;
   setQueue: (tracks: Track[]) => void;
@@ -51,6 +40,7 @@ interface PlayerStore {
   setIsShuffle: (shuffle: boolean) => void;
   setShuffleOrder: (order: number[]) => void;
   setMiniPlayerVisible: (visible: boolean) => void;
+  setShowFavoritesOnly: (show: boolean) => void;
 
   // Play stats actions
   recordPlay: (trackUri: string) => void;
@@ -70,6 +60,7 @@ const initialState = {
   isShuffle: false,
   shuffleOrder: [],
   miniPlayerVisible: false,
+  showFavoritesOnly: false,
   playStats: {},
 };
 
@@ -94,6 +85,7 @@ export const usePlayerStore = create<PlayerStore>()(
       setIsShuffle: (shuffle) => set({ isShuffle: shuffle }),
       setShuffleOrder: (order) => set({ shuffleOrder: order }),
       setMiniPlayerVisible: (visible) => set({ miniPlayerVisible: visible }),
+      setShowFavoritesOnly: (show) => set({ showFavoritesOnly: show }),
 
       recordPlay: (trackUri: string) => {
         const { playStats } = get();
@@ -132,7 +124,10 @@ export const usePlayerStore = create<PlayerStore>()(
     }),
     {
       name: 'player-store',
-      storage: createJSONStorage(() => AsyncStorage || memoryStorage),
+      storage: createJSONStorage(() => {
+        const storage = getAsyncStorage();
+        return storage || memoryStorage;
+      }),
       partialize: (state) => ({
         playStats: state.playStats,
         repeatMode: state.repeatMode,
