@@ -1,37 +1,45 @@
 import { StyleSheet, View, Pressable, ActivityIndicator } from 'react-native';
-import { useAudioPlayer } from '@/hooks/use-audio-player';
+import { usePlayer } from '@/context/PlayerContext';
 import { formatDuration } from '@/utils/formatDuration';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useEffect } from 'react';
 
 interface PlayerProps {
   onClose: () => void;
 }
 
 export function Player({ onClose }: PlayerProps) {
-  const { state, play, pause, seek, unload } = useAudioPlayer();
+  const { playerState, play, pause, next, previous, seek, shuffle, setShuffle, repeatMode, setRepeatMode } = usePlayer();
 
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      unload();
-    };
-  }, [unload]);
-
-  if (!state.currentTrack) {
+  if (!playerState.currentTrack) {
     return null;
   }
 
   const handlePlayPause = async () => {
     try {
-      if (state.isPlaying) {
+      if (playerState.isPlaying) {
         await pause();
       } else {
         await play();
       }
     } catch (error) {
       console.warn('Play/pause error:', error);
+    }
+  };
+
+  const handleNext = async () => {
+    try {
+      await next();
+    } catch (error) {
+      console.warn('Next error:', error);
+    }
+  };
+
+  const handlePrevious = async () => {
+    try {
+      await previous();
+    } catch (error) {
+      console.warn('Previous error:', error);
     }
   };
 
@@ -43,8 +51,19 @@ export function Player({ onClose }: PlayerProps) {
     }
   };
 
+  const handleShuffleToggle = () => {
+    setShuffle(!shuffle);
+  };
+
+  const handleRepeatToggle = () => {
+    const modes: Array<'OFF' | 'ONE' | 'ALL'> = ['OFF', 'ONE', 'ALL'];
+    const currentIndex = modes.indexOf(repeatMode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    setRepeatMode(modes[nextIndex]);
+  };
+
   const progressPercent =
-    state.duration > 0 ? Math.max(0, Math.min(1, state.position / state.duration)) : 0;
+    playerState.duration > 0 ? Math.max(0, Math.min(1, playerState.position / playerState.duration)) : 0;
 
   return (
     <ThemedView style={styles.container}>
@@ -64,10 +83,10 @@ export function Player({ onClose }: PlayerProps) {
         </ThemedView>
 
         <ThemedText style={styles.trackTitle} numberOfLines={2}>
-          {state.currentTrack.title}
+          {playerState.currentTrack.title}
         </ThemedText>
         <ThemedText style={styles.trackArtist} numberOfLines={1}>
-          {state.currentTrack.artist}
+          {playerState.currentTrack.artist}
         </ThemedText>
       </ThemedView>
 
@@ -78,7 +97,7 @@ export function Player({ onClose }: PlayerProps) {
           onPress={(e) => {
             const { width } = e.currentTarget as any;
             const { pageX } = e.nativeEvent;
-            const newPosition = (pageX / width) * state.duration;
+            const newPosition = (pageX / width) * playerState.duration;
             handleSeek(newPosition);
           }}
         >
@@ -92,35 +111,82 @@ export function Player({ onClose }: PlayerProps) {
 
         <ThemedView style={styles.timeDisplay}>
           <ThemedText style={styles.timeText}>
-            {formatDuration(state.position)}
+            {formatDuration(playerState.position)}
           </ThemedText>
           <ThemedText style={styles.timeText}>
-            {formatDuration(state.duration)}
+            {formatDuration(playerState.duration)}
           </ThemedText>
         </ThemedView>
       </ThemedView>
 
-      {/* Controls */}
-      <ThemedView style={styles.controls}>
-        {state.isLoading ? (
-          <ActivityIndicator size="large" />
-        ) : (
-          <Pressable
-            style={styles.playButton}
-            onPress={handlePlayPause}
-            android_ripple={{ color: 'rgba(0, 0, 0, 0.1)' }}
-          >
-            <ThemedText style={styles.playButtonText}>
-              {state.isPlaying ? '⏸' : '▶'}
-            </ThemedText>
-          </Pressable>
-        )}
+      {/* Main Controls */}
+      <ThemedView style={styles.controlsContainer}>
+        <Pressable
+          style={[styles.controlButton, shuffle && styles.controlButtonActive]}
+          onPress={handleShuffleToggle}
+          android_ripple={{ color: 'rgba(0, 0, 0, 0.1)' }}
+        >
+          <ThemedText style={[styles.controlText, shuffle && styles.controlTextActive]}>
+            🔀
+          </ThemedText>
+        </Pressable>
+
+        <Pressable
+          style={styles.controlButton}
+          onPress={handlePrevious}
+          android_ripple={{ color: 'rgba(0, 0, 0, 0.1)' }}
+        >
+          <ThemedText style={styles.controlText}>⏮</ThemedText>
+        </Pressable>
+
+        <View style={styles.playButtonContainer}>
+          {playerState.isLoading ? (
+            <ActivityIndicator size="large" />
+          ) : (
+            <Pressable
+              style={styles.playButton}
+              onPress={handlePlayPause}
+              android_ripple={{ color: 'rgba(0, 0, 0, 0.1)' }}
+            >
+              <ThemedText style={styles.playButtonText}>
+                {playerState.isPlaying ? '⏸' : '▶'}
+              </ThemedText>
+            </Pressable>
+          )}
+        </View>
+
+        <Pressable
+          style={styles.controlButton}
+          onPress={handleNext}
+          android_ripple={{ color: 'rgba(0, 0, 0, 0.1)' }}
+        >
+          <ThemedText style={styles.controlText}>⏭</ThemedText>
+        </Pressable>
+
+        <Pressable
+          style={[styles.controlButton, repeatMode !== 'OFF' && styles.controlButtonActive]}
+          onPress={handleRepeatToggle}
+          android_ripple={{ color: 'rgba(0, 0, 0, 0.1)' }}
+        >
+          <ThemedText style={[styles.controlText, repeatMode !== 'OFF' && styles.controlTextActive]}>
+            {repeatMode === 'ONE' ? '🔂' : '🔁'}
+          </ThemedText>
+        </Pressable>
       </ThemedView>
 
+      {/* Repeat indicator */}
+      {repeatMode !== 'OFF' && (
+        <ThemedView style={styles.repeatIndicator}>
+          <ThemedText style={styles.repeatIndicatorText}>
+            {repeatMode === 'ONE' ? 'Repeat: One' : 'Repeat: All'}
+          </ThemedText>
+        </ThemedView>
+      )}
+
       {/* Error Display */}
-      {state.error && (
+      {playerState.error && (
         <ThemedView style={styles.errorBox}>
-          <ThemedText style={styles.errorText}>{state.error}</ThemedText>
+          <ThemedText style={styles.errorText}>{playerState.error}</ThemedText>
         </ThemedView>
       )}
     </ThemedView>
@@ -209,9 +275,32 @@ const styles = StyleSheet.create({
     opacity: 0.6,
     fontVariant: ['tabular-nums'],
   },
-  controls: {
+  controlsContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'center',
+    gap: 24,
+    marginBottom: 24,
+  },
+  controlButton: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  controlButtonActive: {
+    backgroundColor: '#007AFF',
+    borderRadius: 24,
+  },
+  controlText: {
+    fontSize: 24,
+  },
+  controlTextActive: {
+    color: '#FFFFFF',
+  },
+  playButtonContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   playButton: {
     width: 64,
@@ -224,6 +313,18 @@ const styles = StyleSheet.create({
   playButtonText: {
     fontSize: 28,
     color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  repeatIndicator: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+    borderRadius: 6,
+    marginBottom: 12,
+  },
+  repeatIndicatorText: {
+    fontSize: 12,
+    color: '#007AFF',
     fontWeight: '600',
   },
   errorBox: {

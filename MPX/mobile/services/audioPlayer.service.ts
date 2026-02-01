@@ -1,14 +1,44 @@
 import { Platform } from 'react-native';
 import { Track } from '../types/Track';
 
-// Only import expo-av on native platforms
-let Audio: any = null;
+// Import expo-audio on native platforms only
+let ExpoAudio: any = null;
+let isAudioAvailable = false;
+
+console.log('[AudioPlayer] Initializing on platform:', Platform.OS);
+
 if (Platform.OS !== 'web') {
   try {
-    const audioModule = require('expo-av');
-    Audio = audioModule.Audio;
+    console.log('[AudioPlayer] Attempting to load expo-audio module...');
+    ExpoAudio = require('expo-audio');
+    console.log('[AudioPlayer] expo-audio loaded successfully');
+    console.log('[AudioPlayer] Exported functions:', Object.keys(ExpoAudio));
+    isAudioAvailable = true;
+    
+    // Configure audio mode for background playback
+    configureAudioMode();
   } catch (error) {
-    console.warn('expo-av not available:', error);
+    console.error('[AudioPlayer] FAILED to load expo-audio:', error);
+    isAudioAvailable = false;
+  }
+} else {
+  console.log('[AudioPlayer] Web platform detected, audio disabled');
+}
+
+// Configure audio for background playback
+async function configureAudioMode() {
+  try {
+    if (ExpoAudio && ExpoAudio.setAudioModeAsync) {
+      await ExpoAudio.setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
+        staysActiveInBackground: true,
+        interruptionMode: 'mixWithOthers',
+      });
+      console.log('[AudioPlayer] Audio mode configured for background playback');
+    }
+  } catch (error) {
+    console.warn('[AudioPlayer] Error configuring audio mode:', error);
   }
 }
 
@@ -19,13 +49,19 @@ export interface AudioPlaybackState {
   position: number;
   isLoading: boolean;
   error: string | null;
+  isBuffering?: boolean;
 }
 
 export type AudioPlaybackListener = (state: AudioPlaybackState) => void;
+export type TrackEndListener = (track: Track) => void;
 
 export class AudioPlayerService {
   private static instance: AudioPlayerService;
-  private sound: any = null;
+  private player: any = null;
+  private statusSubscription: any = null;
+  private trackEndListeners: Set<TrackEndListener> = new Set();
+  private updateInterval: ReturnType<typeof setInterval> | null = null;
+  
   private state: AudioPlaybackState = {
     currentTrack: null,
     isPlaying: false,
@@ -33,6 +69,7 @@ export class AudioPlayerService {
     position: 0,
     isLoading: false,
     error: null,
+    isBuffering: false,
   };
   private listeners: Set<AudioPlaybackListener> = new Set();
 
@@ -51,14 +88,57 @@ export class AudioPlayerService {
     return () => this.listeners.delete(listener);
   }
 
+  subscribeToTrackEnd(listener: TrackEndListener): () => void {
+    this.trackEndListeners.add(listener);
+    return () => this.trackEndListeners.delete(listener);
+  }
+
   private notifyListeners(): void {
     this.listeners.forEach((listener) => listener(this.state));
   }
 
+  private notifyTrackEnd(track: Track): void {
+    this.trackEndListeners.forEach((listener) => listener(track));
+  }
+
+  private startPositionCheck(): void {
+    if (this.updateInterval) clearInterval(this.updateInterval);
+    
+    this.updateInterval = setInterval(() => {
+      if (this.player && this.state.duration > 0) {
+        const currentPos = this.player.currentTime || 0;
+        const duration = this.player.duration || this.state.duration;
+        
+        // Check if track has ended (within 0.5 second tolerance)
+        if (currentPos >= duration - 0.5 && this.state.isPlaying) {
+          console.log('[AudioPlayer] Track ended, notifying listeners');
+          this.notifyTrackEnd(this.state.currentTrack!);
+        }
+      }
+    }, 100);
+  }
+
+  private stopPositionCheck(): void {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+  }
+
   async loadTrack(track: Track): Promise<void> {
     try {
-      if (!Audio) {
+      console.log('[AudioPlayer.loadTrack] Start loading track:', track.title, 'URI:', track.uri);
+      console.log('[AudioPlayer.loadTrack] isAudioAvailable:', isAudioAvailable);
+      console.log('[AudioPlayer.loadTrack] ExpoAudio object:', ExpoAudio ? 'defined' : 'null');
+
+      if (!isAudioAvailable) {
+        console.error('[AudioPlayer.loadTrack] Audio not available - throwing error');
         throw new Error('Audio module not available on this platform');
+      }
+
+      if (!ExpoAudio) {
+        console.error('[AudioPlayer.loadTrack] ExpoAudio is null despite isAudioAvailable=true');
+        throw new Error('ExpoAudio module is null');
       }
 
       this.state = {
@@ -68,40 +148,67 @@ export class AudioPlayerService {
       };
       this.notifyListeners();
 
-      // Unload previous sound if it exists
-      if (this.sound) {
-        await this.sound.unloadAsync();
-        this.sound = null;
+      // Release previous player if it exists
+      if (this.player) {
+        console.log('[AudioPlayer.loadTrack] Releasing previous player...');
+        if (this.statusSubscription) {
+          this.statusSubscription.remove();
+          this.statusSubscription = null;
+        }
+        try {
+          await this.player.pause();
+        } catch (e) {
+          console.warn('[AudioPlayer.loadTrack] Error pausing player:', e);
+        }
+        this.player = null;
       }
 
-      // Create and load new sound
-      const sound = new Audio.Sound();
-      await sound.loadAsync({ uri: track.uri });
+      // Create new player using expo-audio API
+      console.log('[AudioPlayer.loadTrack] Creating new audio player with URI:', track.uri);
+      const { createAudioPlayer } = ExpoAudio;
+      
+      if (!createAudioPlayer) {
+        console.error('[AudioPlayer.loadTrack] createAudioPlayer function not found in ExpoAudio');
+        console.error('[AudioPlayer.loadTrack] Available in ExpoAudio:', Object.keys(ExpoAudio));
+        throw new Error('createAudioPlayer not exported from expo-audio');
+      }
 
-      // Set up status update callback
-      sound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.isLoaded) {
+      this.player = createAudioPlayer({ uri: track.uri });
+      console.log('[AudioPlayer.loadTrack] Player created successfully');
+      console.log('[AudioPlayer.loadTrack] Player methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.player)));
+
+      // Subscribe to status updates using addListener
+      console.log('[AudioPlayer.loadTrack] Subscribing to playback status...');
+      this.statusSubscription = this.player.addListener(
+        'playbackStatusUpdate',
+        (status: any) => {
+          console.log('[AudioPlayer.statusUpdate] Status received:', { 
+            playing: status.playing || this.player.playing, 
+            duration: status.duration || this.player.duration, 
+            currentTime: status.currentTime || this.player.currentTime 
+          });
           this.state = {
             ...this.state,
-            duration: status.durationMillis ? status.durationMillis / 1000 : 0,
-            position: status.positionMillis ? status.positionMillis / 1000 : 0,
-            isPlaying: status.isPlaying,
+            duration: this.player.duration || status.duration || 0,
+            position: this.player.currentTime || status.currentTime || 0,
+            isPlaying: this.player.playing || status.playing || false,
           };
+          this.notifyListeners();
         }
-        this.notifyListeners();
-      });
+      );
 
-      this.sound = sound;
       this.state = {
         ...this.state,
         currentTrack: track,
         isLoading: false,
         isPlaying: false,
-        duration: 0,
-        position: 0,
+        duration: this.player.duration || 0,
+        position: this.player.currentTime || 0,
       };
       this.notifyListeners();
+      console.log('[AudioPlayer.loadTrack] Track loaded successfully');
     } catch (error) {
+      console.error('[AudioPlayer.loadTrack] ERROR:', error);
       this.state = {
         ...this.state,
         isLoading: false,
@@ -113,12 +220,18 @@ export class AudioPlayerService {
   }
 
   async play(): Promise<void> {
-    if (!this.sound) {
+    if (!this.player) {
       throw new Error('No track loaded');
     }
     try {
-      await this.sound.playAsync();
+      console.log('[AudioPlayer.play] Starting playback');
+      this.player.play();
+      this.startPositionCheck(); // Start checking for track end
+      // Actualizar estado local
+      this.state = { ...this.state, isPlaying: true };
+      this.notifyListeners();
     } catch (error) {
+      console.error('[AudioPlayer.play] Error:', error);
       this.state = {
         ...this.state,
         error: error instanceof Error ? error.message : 'Failed to play track',
@@ -129,12 +242,18 @@ export class AudioPlayerService {
   }
 
   async pause(): Promise<void> {
-    if (!this.sound) {
+    if (!this.player) {
       throw new Error('No track loaded');
     }
     try {
-      await this.sound.pauseAsync();
+      console.log('[AudioPlayer.pause] Pausing playback');
+      this.player.pause();
+      this.stopPositionCheck(); // Stop checking for track end
+      // Actualizar estado local
+      this.state = { ...this.state, isPlaying: false };
+      this.notifyListeners();
     } catch (error) {
+      console.error('[AudioPlayer.pause] Error:', error);
       this.state = {
         ...this.state,
         error: error instanceof Error ? error.message : 'Failed to pause track',
@@ -145,12 +264,17 @@ export class AudioPlayerService {
   }
 
   async seek(position: number): Promise<void> {
-    if (!this.sound) {
+    if (!this.player) {
       throw new Error('No track loaded');
     }
     try {
-      await this.sound.setPositionAsync(position * 1000); // Convert seconds to ms
+      console.log('[AudioPlayer.seek] Seeking to:', position);
+      await this.player.seekTo(position);
+      // Actualizar estado local
+      this.state = { ...this.state, position };
+      this.notifyListeners();
     } catch (error) {
+      console.error('[AudioPlayer.seek] Error:', error);
       this.state = {
         ...this.state,
         error: error instanceof Error ? error.message : 'Failed to seek',
@@ -161,13 +285,18 @@ export class AudioPlayerService {
   }
 
   async unload(): Promise<void> {
-    if (this.sound) {
-      try {
-        await this.sound.unloadAsync();
-      } catch (error) {
-        console.warn('Error unloading sound:', error);
+    if (this.player) {
+      console.log('[AudioPlayer.unload] Unloading player');
+      if (this.statusSubscription) {
+        this.statusSubscription.remove();
+        this.statusSubscription = null;
       }
-      this.sound = null;
+      try {
+        await this.player.pause();
+      } catch (error) {
+        console.warn('[AudioPlayer.unload] Error pausing:', error);
+      }
+      this.player = null;
     }
     this.state = {
       currentTrack: null,
