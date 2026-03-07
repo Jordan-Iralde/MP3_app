@@ -87,64 +87,73 @@ Agregar / quitar canciones
 
 Guardado local (AsyncStorage)
 
-📦 Build orientada a usuario real
-
-🔹 v0.7 — Backend + Auth
-
-🎯 Objetivo: base cloud
-
-Registro / login
-
-JWT
-
-Usuario asociado a device
-
-API documentada
-
-📦 Build con login opcional
-
-🔹 v0.8 — Sync de metadata
-
-🎯 Objetivo: backup ligero
-
-Sync playlists
-
-Sync favoritos
-
-Manejo offline-first
-
-📦 Build multi-device ready
-
-🔹 v0.9 — UX + polish
+🔹 v0.7 — UX + polish ✅ COMPLETADO
 
 🎯 Objetivo: producto presentable
 
-Animaciones
+✅ Animaciones (AnimatedContainer, PulseAnimation, RotationAnimation, SwipeToDelete)
 
-Dark mode
+✅ Dark mode (Implementado en v0.6.3)
 
-Gestos
+✅ Gestos (Gestos de toque, desliz, animaciones de presión)
 
-Feedback visual
+✅ Feedback visual (Toast, Bubbles, HapticFeedback, CircularProgress)
 
-📦 Build casi final
+✅ Sidebar global con acceso a todas las features
 
-🔹 v1.0 — Release estable
+✅ Reproductor de playlist mejorado
 
-🎯 Objetivo: MP3 Player sólido
+✅ Optimización de carga (LazyLoad, Cache, SkeletonLoading, DeferredRender)
 
-Bugfixing
+✅ Header responsivo e integrado
 
-Performance final
+✅ Sistema de notificaciones profesional
 
-Docs completos
+📦 Build casi final ✅
 
-README profesional
+🔹 v0.8 — Release estable
 
-Screenshots
+🎯 Objetivo: MP3 Player sólido y publicable
 
-Licencia
+📋 Testing & QA
+- Pruebas exhaustivas de todas las features
+- Pruebas en dispositivos reales (Android 10+, iOS 14+)
+- Pruebas de performance (perfilado con DevTools)
+- Pruebas de batería (optimización de background audio)
 
-CI básico
+🐛 Bugfixing
+- Reportar y corregir todos los bugs encontrados
+- Validación de edge cases
+- Manejo de errores mejorado
 
-📦 Build Play Store / APK público
+⚡ Performance final
+- Mediciones de performance
+- Optimización de memoria
+- Reducción de bundle size
+- Verificación de 60 FPS en scroll
+
+📚 Documentación completa
+- README.md profesional con screenshots
+- CONTRIBUTING.md para colaboradores
+- API docs de componentes
+- Guía de instalación y setup
+- Guía de uso del reproductor
+
+📸 Screenshots y demos
+- Capturas de cada pantalla
+- Video demo en acción
+- Instrucciones de uso
+
+⚖️ Licencia
+- Elegir licencia (MIT / Apache 2.0)
+- Añadir LICENCE.md
+
+🔄 CI Básico
+- GitHub Actions workflow
+- Automated testing
+- Build automation
+
+📱 Build Play Store / APK público
+- Generación de APK funcional
+- Upload a Play Store (beta testing)
+- Configuración de distribución
